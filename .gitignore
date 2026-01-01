@@ -1,0 +1,35 @@
+# API Keys
+.api-key
+
+# App Data
+.automaker/
+agent-sessions/
+sessions-metadata.json
+settings.json
+window-bounds.json
+
+# Cache Directories
+Cache/
+Code Cache/
+GPUCache/
+DawnGraphiteCache/
+DawnWebGPUCache/
+
+# Storage
+Local Storage/
+Session Storage/
+Shared Dictionary/
+SharedStorage/
+SharedStorage-wal
+DIPS
+DIPS-wal
+*-wal
+
+# Network
+Network/
+
+# Preferences
+Preferences
+
+# Node
+node_modules/
