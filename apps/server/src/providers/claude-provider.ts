@@ -10,7 +10,7 @@ import { BaseProvider } from './base-provider.js';
 import { classifyError, getUserFriendlyErrorMessage, createLogger } from '@automaker/utils';
 
 const logger = createLogger('ClaudeProvider');
-import { getThinkingTokenBudget, validateBareModelId } from '@automaker/types';
+import { getThinkingTokenBudget } from '@automaker/types';
 import type {
   ExecuteOptions,
   ProviderMessage,
@@ -22,8 +22,12 @@ import type {
 // Only these vars are passed - nothing else from process.env leaks through.
 const ALLOWED_ENV_VARS = [
   'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN', // Alternative to API_KEY, used by some proxies (e.g., GLM)
   'ANTHROPIC_BASE_URL',
-  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_DEFAULT_MODEL',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL',
   'PATH',
   'HOME',
   'SHELL',
@@ -55,10 +59,6 @@ export class ClaudeProvider extends BaseProvider {
    * Execute a query using Claude Agent SDK
    */
   async *executeQuery(options: ExecuteOptions): AsyncGenerator<ProviderMessage> {
-    // Validate that model doesn't have a provider prefix
-    // AgentService should strip prefixes before passing to providers
-    validateBareModelId(options.model, 'ClaudeProvider');
-
     const {
       prompt,
       model,
@@ -76,6 +76,14 @@ export class ClaudeProvider extends BaseProvider {
     const maxThinkingTokens = getThinkingTokenBudget(thinkingLevel);
 
     // Build Claude SDK options
+    // AUTONOMOUS MODE: Always bypass permissions for fully autonomous operation
+    const hasMcpServers = options.mcpServers && Object.keys(options.mcpServers).length > 0;
+    const defaultTools = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'WebSearch', 'WebFetch'];
+
+    // AUTONOMOUS MODE: Always bypass permissions and allow unrestricted tools
+    // Only restrict tools when no MCP servers are configured
+    const shouldRestrictTools = !hasMcpServers;
+
     const sdkOptions: Options = {
       model,
       systemPrompt,
@@ -83,9 +91,10 @@ export class ClaudeProvider extends BaseProvider {
       cwd,
       // Pass only explicitly allowed environment variables to SDK
       env: buildEnv(),
-      // Pass through allowedTools if provided by caller (decided by sdk-options.ts)
-      ...(allowedTools && { allowedTools }),
-      // AUTONOMOUS MODE: Always bypass permissions for fully autonomous operation
+      // Only restrict tools if explicitly set OR (no MCP / unrestricted disabled)
+      ...(allowedTools && shouldRestrictTools && { allowedTools }),
+      ...(!allowedTools && shouldRestrictTools && { allowedTools: defaultTools }),
+      // AUTONOMOUS MODE: Always bypass permissions and allow dangerous operations
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       abortController,
@@ -95,14 +104,12 @@ export class ClaudeProvider extends BaseProvider {
         : {}),
       // Forward settingSources for CLAUDE.md file loading
       ...(options.settingSources && { settingSources: options.settingSources }),
+      // Forward sandbox configuration
+      ...(options.sandbox && { sandbox: options.sandbox }),
       // Forward MCP servers configuration
       ...(options.mcpServers && { mcpServers: options.mcpServers }),
       // Extended thinking configuration
       ...(maxThinkingTokens && { maxThinkingTokens }),
-      // Subagents configuration for specialized task delegation
-      ...(options.agents && { agents: options.agents }),
-      // Pass through outputFormat for structured JSON outputs
-      ...(options.outputFormat && { outputFormat: options.outputFormat }),
     };
 
     // Build prompt payload
@@ -170,7 +177,7 @@ export class ClaudeProvider extends BaseProvider {
    */
   async detectInstallation(): Promise<InstallationStatus> {
     // Claude SDK is always available since it's a dependency
-    const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
+    const hasApiKey = !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
 
     const status: InstallationStatus = {
       installed: true,

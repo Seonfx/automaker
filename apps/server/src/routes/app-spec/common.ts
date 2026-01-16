@@ -63,7 +63,7 @@ export function setRunningState(
  * Helper to log authentication status
  */
 export function logAuthStatus(context: string): void {
-  const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
+  const hasApiKey = !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
 
   logger.info(`${context} - Auth Status:`);
   logger.info(

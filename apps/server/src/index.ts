@@ -77,7 +77,7 @@ const DATA_DIR = process.env.DATA_DIR || './data';
 const ENABLE_REQUEST_LOGGING = process.env.ENABLE_REQUEST_LOGGING !== 'false'; // Default to true
 
 // Check for required environment variables
-const hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
+const hasAnthropicKey = !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
 
 if (!hasAnthropicKey) {
   logger.warn(`

@@ -10,9 +10,9 @@ export function createApiKeysHandler() {
     try {
       res.json({
         success: true,
-        hasAnthropicKey: !!getApiKey('anthropic') || !!process.env.ANTHROPIC_API_KEY,
-        hasGoogleKey: !!getApiKey('google'),
-        hasOpenaiKey: !!getApiKey('openai') || !!process.env.OPENAI_API_KEY,
+        hasAnthropicKey:
+          !!getApiKey('anthropic') ||
+          !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
       });
     } catch (error) {
       logError(error, 'Get API keys failed');

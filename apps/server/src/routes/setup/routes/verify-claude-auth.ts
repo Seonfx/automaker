@@ -7,16 +7,8 @@ import type { Request, Response } from 'express';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { createLogger } from '@automaker/utils';
 import { getApiKey } from '../common.js';
-import {
-  createSecureAuthEnv,
-  AuthSessionManager,
-  AuthRateLimiter,
-  validateApiKey,
-  createTempEnvOverride,
-} from '../../../lib/auth-utils.js';
 
 const logger = createLogger('Setup');
-const rateLimiter = new AuthRateLimiter();
 
 // Known error patterns that indicate auth failure
 const AUTH_ERROR_PATTERNS = [
@@ -85,19 +77,6 @@ export function createVerifyClaudeAuthHandler() {
         apiKey?: string;
       };
 
-      // Rate limiting to prevent abuse
-      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-      if (!rateLimiter.canAttempt(clientIp)) {
-        const resetTime = rateLimiter.getResetTime(clientIp);
-        res.status(429).json({
-          success: false,
-          authenticated: false,
-          error: 'Too many authentication attempts. Please try again later.',
-          resetTime,
-        });
-        return;
-      }
-
       logger.info(
         `[Setup] Verifying Claude authentication using method: ${authMethod || 'auto'}${apiKey ? ' (with provided key)' : ''}`
       );
@@ -110,47 +89,47 @@ export function createVerifyClaudeAuthHandler() {
       let errorMessage = '';
       let receivedAnyContent = false;
 
-      // Create secure auth session
-      const sessionId = `claude-auth-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      // Save original env values
+      const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
+      const originalAuthToken = process.env.ANTHROPIC_AUTH_TOKEN;
 
       try {
-        // For API key verification, validate the key first
-        if (authMethod === 'api_key' && apiKey) {
-          const validation = validateApiKey(apiKey, 'anthropic');
-          if (!validation.isValid) {
-            res.json({
-              success: true,
-              authenticated: false,
-              error: validation.error,
-            });
-            return;
+        // Configure environment based on auth method
+        if (authMethod === 'cli') {
+          // Check if using custom API endpoint (e.g., GLM proxy)
+          // Custom endpoints require API key even for "CLI" mode
+          const usesCustomEndpoint = !!process.env.ANTHROPIC_BASE_URL;
+
+          if (usesCustomEndpoint) {
+            // For custom endpoints, keep the API key/auth token
+            logger.info('[Setup] Using custom API endpoint - keeping API key for CLI verification');
+          } else {
+            // For CLI verification, remove any API key so it uses CLI credentials only
+            delete process.env.ANTHROPIC_API_KEY;
+            delete process.env.ANTHROPIC_AUTH_TOKEN;
+            logger.info('[Setup] Cleared API key environment for CLI verification');
+          }
+        } else if (authMethod === 'api_key') {
+          // For API key verification, use provided key, stored key, or env var (in order of priority)
+          if (apiKey) {
+            // Use the provided API key (allows testing unsaved keys)
+            process.env.ANTHROPIC_API_KEY = apiKey;
+            logger.info('[Setup] Using provided API key for verification');
+          } else {
+            const storedApiKey = getApiKey('anthropic');
+            if (storedApiKey) {
+              process.env.ANTHROPIC_API_KEY = storedApiKey;
+              logger.info('[Setup] Using stored API key for verification');
+            } else if (!process.env.ANTHROPIC_API_KEY) {
+              res.json({
+                success: true,
+                authenticated: false,
+                error: 'No API key configured. Please enter an API key first.',
+              });
+              return;
+            }
           }
         }
-
-        // Create secure environment without modifying process.env
-        const authEnv = createSecureAuthEnv(authMethod || 'api_key', apiKey, 'anthropic');
-
-        // For API key verification without provided key, use stored key or env var
-        if (authMethod === 'api_key' && !apiKey) {
-          const storedApiKey = getApiKey('anthropic');
-          if (storedApiKey) {
-            authEnv.ANTHROPIC_API_KEY = storedApiKey;
-            logger.info('[Setup] Using stored API key for verification');
-          } else if (!authEnv.ANTHROPIC_API_KEY) {
-            res.json({
-              success: true,
-              authenticated: false,
-              error: 'No API key configured. Please enter an API key first.',
-            });
-            return;
-          }
-        }
-
-        // Store the secure environment in session manager
-        AuthSessionManager.createSession(sessionId, authMethod || 'api_key', apiKey, 'anthropic');
-
-        // Create temporary environment override for SDK call
-        const cleanupEnv = createTempEnvOverride(authEnv);
 
         // Run a minimal query to verify authentication
         const stream = query({
@@ -310,8 +289,25 @@ export function createVerifyClaudeAuthHandler() {
         }
       } finally {
         clearTimeout(timeoutId);
-        // Clean up the auth session
-        AuthSessionManager.destroySession(sessionId);
+        // Restore original environment
+        if (originalAnthropicKey !== undefined) {
+          process.env.ANTHROPIC_API_KEY = originalAnthropicKey;
+        }
+        if (originalAuthToken !== undefined) {
+          process.env.ANTHROPIC_AUTH_TOKEN = originalAuthToken;
+        }
+        // Only clear keys if not using custom endpoint
+        if (authMethod === 'cli') {
+          const usesCustomEndpoint = !!process.env.ANTHROPIC_BASE_URL;
+          if (!usesCustomEndpoint) {
+            if (originalAnthropicKey === undefined) {
+              delete process.env.ANTHROPIC_API_KEY;
+            }
+            if (originalAuthToken === undefined) {
+              delete process.env.ANTHROPIC_AUTH_TOKEN;
+            }
+          }
+        }
       }
 
       logger.info('[Setup] Verification result:', {

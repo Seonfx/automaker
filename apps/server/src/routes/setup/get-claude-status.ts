@@ -109,7 +109,7 @@ export async function getClaudeStatus() {
     hasToken: false,
     hasStoredOAuthToken: !!getApiKey('anthropic_oauth_token'),
     hasStoredApiKey: !!getApiKey('anthropic'),
-    hasEnvApiKey: !!process.env.ANTHROPIC_API_KEY,
+    hasEnvApiKey: !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
     // Additional fields for detailed status
     oauthTokenValid: false,
     apiKeyValid: false,

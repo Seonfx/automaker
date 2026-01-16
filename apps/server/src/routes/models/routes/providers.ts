@@ -15,7 +15,7 @@ export function createProvidersHandler() {
       const providers: Record<string, any> = {
         anthropic: {
           available: statuses.claude?.installed || false,
-          hasApiKey: !!process.env.ANTHROPIC_API_KEY,
+          hasApiKey: !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
         },
         cursor: {
           available: statuses.cursor?.installed || false,

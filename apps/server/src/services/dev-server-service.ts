@@ -39,8 +39,8 @@ export interface DevServerInfo {
   stopping: boolean;
 }
 
-// Port allocation starts at 3001 to avoid conflicts with common dev ports
-const BASE_PORT = 3001;
+// Port allocation starts at 3000 (common default for many web frameworks)
+const BASE_PORT = 3000;
 const MAX_PORT = 3099; // Safety limit
 
 // Common livereload ports that may need cleanup when stopping dev servers
